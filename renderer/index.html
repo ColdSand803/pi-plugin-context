@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="pi-plugin-chrome" content="v2" />
+    <title>PI Context</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --page: Canvas;
+        --surface: color-mix(in srgb, CanvasText 5%, Canvas);
+        --surface-raised: color-mix(in srgb, CanvasText 9%, Canvas);
+        --text: CanvasText;
+        --muted: color-mix(in srgb, CanvasText 57%, Canvas);
+        --line: color-mix(in srgb, CanvasText 15%, Canvas);
+        --system: #62b2ec;
+        --tools: #ad87e8;
+        --messages: #55c6a3;
+        --injected: #efa95b;
+        --other: #e77f8a;
+        --metadata: #91a0ad;
+        --focus: #61c9b0;
+      }
+      :root[data-base="light"] {
+        color-scheme: light;
+        --system: #2476a9;
+        --tools: #7550a8;
+        --messages: #167b60;
+        --injected: #a26314;
+        --other: #ae4d5b;
+        --metadata: #596c7b;
+        --focus: #087e70;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        padding: var(--pi-plugin-titlebar-height, 0px) 18px 22px;
+        color: var(--text);
+        background: var(--page);
+        font: 13px/1.45 "Segoe UI", Inter, system-ui, sans-serif;
+      }
+      button, input, select { font: inherit; }
+      button, select {
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+      button { cursor: pointer; }
+      button:hover, select:hover { background: var(--surface-raised); }
+      button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        min-height: 58px;
+        border-bottom: 1px solid var(--line);
+        -webkit-app-region: drag;
+      }
+      .identity { flex: 1; min-width: 0; }
+      h1 { margin: 0; font-size: 16px; line-height: 1.2; font-weight: 650; }
+      .session-line {
+        overflow: hidden;
+        margin-top: 4px;
+        color: var(--muted);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+      }
+      .head-actions { display: flex; align-items: center; gap: 10px; -webkit-app-region: no-drag; }
+      .session-id { color: var(--muted); font: 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
+      .status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+      .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--messages); }
+      .status-error .status-dot { background: var(--other); }
+      .status-error { color: var(--other); }
+      .refresh-button { min-height: 30px; padding: 4px 10px; }
+      .view-tabs { display: flex; gap: 18px; height: 42px; border-bottom: 1px solid var(--line); }
+      .view-tab {
+        position: relative;
+        min-width: 70px;
+        padding: 0 2px;
+        border: 0;
+        border-radius: 0;
+        color: var(--muted);
+        background: transparent;
+      }
+      .view-tab[aria-selected="true"] { color: var(--text); font-weight: 620; }
+      .view-tab[aria-selected="true"]::after {
+        position: absolute;
+        right: 0;
+        bottom: -1px;
+        left: 0;
+        height: 2px;
+        background: var(--focus);
+        content: "";
+      }
+      main { width: 100%; max-width: 1220px; margin: 0 auto; }
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-bottom: 1px solid var(--line);
+      }
+      .metric { min-width: 0; padding: 14px 14px 15px 0; }
+      .metric + .metric { padding-left: 15px; border-left: 1px solid var(--line); }
+      .metric-label { color: var(--muted); font-size: 11px; }
+      .metric-value { overflow: hidden; margin-top: 5px; font-size: 21px; font-weight: 650; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .metric-note { overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+      .overview-grid { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 12px; padding-top: 13px; }
+      .panel-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+      .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 23px; margin-bottom: 13px; }
+      h2 { margin: 0; font-size: 13px; line-height: 1.3; font-weight: 650; }
+      .panel-meta { color: var(--muted); font-size: 10px; white-space: nowrap; }
+      .composition-layout { display: grid; grid-template-columns: 142px minmax(0, 1fr); align-items: center; gap: 14px; min-height: 175px; }
+      .donut {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 136px;
+        height: 136px;
+        margin: 0 auto;
+        border-radius: 50%;
+        background: conic-gradient(var(--line) 0deg 360deg);
+      }
+      .donut-center {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 91px;
+        height: 91px;
+        border-radius: 50%;
+        background: var(--surface);
+        text-align: center;
+      }
+      .donut-total { max-width: 82px; overflow: hidden; font-size: 19px; font-weight: 650; line-height: 1.1; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+      .donut-caption { margin-top: 5px; color: var(--muted); font-size: 9px; }
+      .legend { display: grid; gap: 8px; min-width: 0; }
+      .legend-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; }
+      .legend-swatch { width: 8px; height: 8px; border-radius: 2px; }
+      .cat-system { background: var(--system); }
+      .cat-tools { background: var(--tools); }
+      .cat-messages { background: var(--messages); }
+      .cat-injected { background: var(--injected); }
+      .cat-other { background: var(--other); }
+      .cat-metadata { background: var(--metadata); }
+      .legend-name { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+      .legend-value { color: var(--text); text-align: right; white-space: nowrap; font-size: 10px; font-variant-numeric: tabular-nums; }
+      .empty-state { display: grid; align-content: center; min-height: 130px; color: var(--muted); text-align: center; }
+      .empty-title { color: var(--text); font-size: 13px; font-weight: 600; }
+      .empty-detail { max-width: 290px; margin: 5px auto 0; font-size: 11px; }
+      .trend-chart { width: 100%; min-height: 150px; }
+      .trend-svg { display: block; width: 100%; height: 142px; overflow: visible; }
+      .trend-grid { stroke: var(--line); stroke-width: 1; }
+      .trend-area { fill: color-mix(in srgb, var(--system) 17%, transparent); }
+      .trend-line { fill: none; stroke: var(--system); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .trend-point { fill: var(--surface); stroke: var(--system); stroke-width: 2; }
+      .trend-labels { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 9px; }
+      .browser-toolbar { display: grid; grid-template-columns: minmax(150px, 1fr) 160px 138px; gap: 8px; margin-bottom: 10px; }
+      .filter-input, .toolbar-select { width: 100%; min-width: 0; height: 32px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: var(--surface); }
+      .filter-input::placeholder { color: var(--muted); }
+      .section-list { border-top: 1px solid var(--line); }
+      .section-row { border-bottom: 1px solid var(--line); }
+      .section-summary { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto 10px; align-items: center; gap: 9px; min-height: 40px; cursor: pointer; list-style: none; }
+      .section-summary::-webkit-details-marker { display: none; }
+      .section-summary::after { width: 10px; color: var(--muted); content: "+"; text-align: center; }
+      details[open] > .section-summary::after { content: "−"; }
+      .section-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 570; }
+      .section-count { color: var(--muted); font-size: 10px; white-space: nowrap; }
+      .section-tokens { min-width: 64px; color: var(--text); text-align: right; white-space: nowrap; font-size: 10px; font-variant-numeric: tabular-nums; }
+      .item-list { display: grid; gap: 5px; padding: 0 0 10px 17px; }
+      .item-row { min-width: 0; padding: 8px 10px; border-left: 2px solid var(--line); background: color-mix(in srgb, var(--surface-raised) 74%, transparent); }
+      .item-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 3px; }
+      .item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; }
+      .item-tokens { flex: none; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+      .item-preview { display: -webkit-box; overflow: hidden; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+      .footnote { margin-top: 10px; color: var(--muted); font-size: 10px; }
+      .overview-empty { margin-top: 12px; }
+      .capture-button { min-height: 32px; margin-top: 12px; padding: 5px 10px; border-color: color-mix(in srgb, var(--focus) 44%, var(--line)); background: var(--surface-raised); }
+      .capture-button:hover { border-color: var(--focus); }
+      .inventory-panel { margin-top: 12px; }
+      .inventory-list { border-top: 1px solid var(--line); }
+      .inventory-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+      .inventory-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+      .inventory-name-button { overflow: hidden; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+      .inventory-name-button:hover { color: var(--focus); text-decoration: underline; }
+      .inventory-amount { flex: none; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+      .inventory-track { height: 4px; overflow: hidden; border-radius: 4px; background: var(--surface-raised); }
+      .inventory-fill { height: 100%; border-radius: inherit; }
+
+      @media (max-width: 760px) {
+        body { padding-right: 12px; padding-left: 12px; }
+        .overview-grid { grid-template-columns: 1fr; }
+        .composition-layout { grid-template-columns: 136px minmax(0, 1fr); }
+      }
+      @media (max-width: 520px) {
+        .topbar { gap: 8px; }
+        .head-actions { gap: 6px; }
+        .session-id { display: none; }
+        .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .metric { padding: 11px 8px 11px 0; }
+        .metric + .metric { padding-left: 10px; }
+        .metric:nth-child(3) { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
+        .metric:nth-child(4) { border-top: 1px solid var(--line); }
+        .browser-toolbar { grid-template-columns: 1fr 1fr; }
+        .filter-input { grid-column: 1 / -1; }
+        .composition-layout { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
+        .donut { width: 108px; height: 108px; }
+        .donut-center { width: 72px; height: 72px; }
+        .donut-total { font-size: 16px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="identity">
+        <h1 id="title">PI Context</h1>
+        <div id="sessionLine" class="session-line">读取当前会话中</div>
+      </div>
+      <div class="head-actions">
+        <span id="status" class="status"><span class="status-dot" aria-hidden="true"></span><span id="statusText">正在连接</span></span>
+        <span id="sessionId" class="session-id"></span>
+        <button id="refresh" class="refresh-button" type="button">刷新</button>
+      </div>
+    </header>
+    <nav class="view-tabs" role="tablist" aria-label="Context views">
+      <button id="tabOverview" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="overviewView">总览</button>
+      <button id="tabBrowser" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="browserView">上下文浏览</button>
+    </nav>
+    <main>
+      <div id="overviewView" class="view-panel" role="tabpanel">
+        <section class="summary-grid" aria-label="Context summary">
+          <div class="metric"><div id="labelTokens" class="metric-label">估算 Token</div><div id="metricTokens" class="metric-value">--</div><div id="noteTokens" class="metric-note">文本启发式估算</div></div>
+          <div class="metric"><div id="labelMessages" class="metric-label">消息条目</div><div id="metricMessages" class="metric-value">--</div><div id="noteMessages" class="metric-note">顶层消息计数</div></div>
+          <div class="metric"><div id="labelSections" class="metric-label">上下文分区</div><div id="metricSections" class="metric-value">--</div><div id="noteSections" class="metric-note">读取到的字段</div></div>
+          <div class="metric"><div id="labelCaptured" class="metric-label">最近采集</div><div id="metricCaptured" class="metric-value">--</div><div id="noteCaptured" class="metric-note">当前会话</div></div>
+        </section>
+        <div class="overview-grid">
+          <section class="panel-card" aria-labelledby="headingComposition">
+            <div class="panel-heading"><h2 id="headingComposition">上下文组成</h2><span id="compositionTotal" class="panel-meta">--</span></div>
+            <div id="compositionEmpty" class="empty-state">
+              <div class="empty-title">尚无上下文快照</div>
+              <div id="compositionEmptyDetail" class="empty-detail">在聊天中请求检查当前会话后，这里会显示组成分布。</div>
+              <button id="captureContext" class="capture-button" type="button">在聊天中检查</button>
+            </div>
+            <div id="compositionContent" class="composition-layout" hidden>
+              <div id="compositionDonut" class="donut" role="img" aria-label="Context composition">
+                <div class="donut-center"><strong id="donutTotal" class="donut-total">--</strong><span id="donutCaption" class="donut-caption">估算 Token</span></div>
+              </div>
+              <div id="compositionLegend" class="legend"></div>
+            </div>
+          </section>
+          <section class="panel-card" aria-labelledby="headingTrend">
+            <div class="panel-heading"><h2 id="headingTrend">快照趋势</h2><span id="trendMeta" class="panel-meta">--</span></div>
+            <div id="trendEmpty" class="empty-state">
+              <div class="empty-title">暂无可比较的快照</div>
+              <div id="trendEmptyDetail" class="empty-detail">完成多次上下文检查后，趋势会显示在这里。</div>
+            </div>
+            <div id="trendChart" class="trend-chart" hidden></div>
+          </section>
+        </div>
+        <section class="panel-card inventory-panel" aria-labelledby="headingInventory">
+          <div class="panel-heading"><h2 id="headingInventory">主要分区</h2><span id="inventoryMeta" class="panel-meta">--</span></div>
+          <div id="inventoryEmpty" class="empty-state">
+            <div id="inventoryEmptyTitle" class="empty-title">尚无上下文快照</div>
+            <div id="inventoryEmptyDetail" class="empty-detail">分区明细会按 Token 占用从高到低排列。</div>
+          </div>
+          <div id="inventoryList" class="inventory-list" hidden></div>
+        </section>
+
+      </div>
+      <div id="browserView" class="view-panel" role="tabpanel" hidden>
+        <section class="panel-card">
+          <div class="panel-heading"><h2 id="headingBreakdown">上下文浏览</h2><span id="breakdownMeta" class="panel-meta">--</span></div>
+          <div class="browser-toolbar">
+            <input id="filter" class="filter-input" type="search" />
+            <select id="categoryFilter" class="toolbar-select" aria-label="Filter category">
+              <option value="all" id="optionAll">全部分类</option>
+              <option value="system" id="optionSystem">系统提示</option>
+              <option value="tools" id="optionTools">工具定义</option>
+              <option value="messages" id="optionMessages">消息</option>
+              <option value="injected" id="optionInjected">注入内容</option>
+              <option value="other" id="optionOther">其他</option>
+              <option value="metadata" id="optionMetadata">元数据</option>
+            </select>
+            <select id="sortBy" class="toolbar-select" aria-label="Sort sections">
+              <option value="tokens" id="sortTokens">按 Token 排序</option>
+              <option value="name" id="sortName">按名称排序</option>
+            </select>
+          </div>
+          <div id="breakdownEmpty" class="empty-state">
+            <div id="breakdownEmptyTitle" class="empty-title">尚无可浏览内容</div>
+            <div id="breakdownEmptyDetail" class="empty-detail">上下文快照会按系统、工具、消息等分类展开。</div>
+          </div>
+          <div id="sectionList" class="section-list"></div>
+          <div id="footnote" class="footnote">Token 数为粗略估算，不代表模型计费值。</div>
+        </section>
+      </div>
+    </main>
+    <script>
+      const labels = {
+        zh: {
+          title: "PI Context", overview: "总览", browser: "上下文浏览", refresh: "刷新", connecting: "读取会话中", ready: "已连接", unavailable: "会话信息不可用", error: "读取失败", unknown: "未命名会话",
+          tokens: "估算 Token", messages: "消息条目", sections: "上下文分区", captured: "最近采集", estimate: "按文本长度粗估", messageCount: "顶层消息计数", fieldCount: "读取到的字段", currentSession: "当前会话",
+          composition: "上下文组成", trend: "快照趋势", count: "条目", filter: "搜索分区或内容", noMatches: "没有匹配内容", all: "全部分类", sortTokens: "按 Token 排序", sortName: "按名称排序",
+          noSnapshotTitle: "尚无上下文快照", noSnapshotDetail: "在聊天中请求检查当前会话后，这里会显示组成分布。", noTrendTitle: "暂无可比较的快照", noTrendDetail: "完成多次上下文检查后，趋势会显示在这里。", noBrowserTitle: "尚无可浏览内容", noBrowserDetail: "快照会按系统、工具、消息等分类展开。", footer: "Token 数为粗略估算，不代表模型计费值。",
+          category: { system: "系统提示", tools: "工具定义", messages: "消息", injected: "注入内容", other: "其他", metadata: "元数据" }
+        },
+        en: {
+          title: "PI Context", overview: "Overview", browser: "Context browser", refresh: "Refresh", connecting: "Reading session", ready: "Connected", unavailable: "Session unavailable", error: "Read failed", unknown: "Untitled session",
+          tokens: "Estimated tokens", messages: "Message items", sections: "Context sections", captured: "Latest capture", estimate: "Text-length estimate", messageCount: "Top-level message count", fieldCount: "Fields returned", currentSession: "Active session",
+          composition: "Context composition", trend: "Snapshot trend", count: "items", filter: "Search sections or content", noMatches: "No matching content", all: "All categories", sortTokens: "Sort by tokens", sortName: "Sort by name",
+          noSnapshotTitle: "No context snapshot yet", noSnapshotDetail: "Ask the agent to inspect this session to see its composition here.", noTrendTitle: "No comparable snapshots", noTrendDetail: "The trend appears after multiple context inspections.", noBrowserTitle: "Nothing to browse yet", noBrowserDetail: "Captured context is grouped into system, tools, messages and more.", footer: "Token counts are rough estimates, not provider billing values.",
+          category: { system: "System", tools: "Tool definitions", messages: "Messages", injected: "Injected content", other: "Other", metadata: "Metadata" }
+        }
+      };
+      const extraLabels = {
+        zh: {
+          captureButton: "在聊天中检查", suggestionShown: "检查建议已放入聊天输入框，按 Tab 接受后发送。", suggestionUnavailable: "输入框非空或暂不可用；清空输入框后重试。", suggestionFailed: "无法准备检查建议。",
+          inventory: "主要分区", inventoryEmptyTitle: "尚无分区明细", inventoryEmptyDetail: "快照中的分区会按估算 Token 占用从高到低排列。"
+        },
+        en: {
+          captureButton: "Inspect in chat", suggestionShown: "An inspection suggestion is ready in the composer. Press Tab to accept, then send.", suggestionUnavailable: "The composer is not empty or unavailable. Clear it and try again.", suggestionFailed: "Could not prepare an inspection suggestion.",
+          inventory: "Largest sections", inventoryEmptyTitle: "No section details yet", inventoryEmptyDetail: "Captured sections will be ranked by estimated token size."
+        }
+      };
+      const categoryOrder = ["system", "tools", "messages", "injected", "other", "metadata"];
+      const bridge = window.pluginBridge;
+      const svgNS = "http://www.w3.org/2000/svg";
+      let locale = "zh";
+      let activeSession = null;
+      let activeSessionId = null;
+      let snapshot = null;
+      let snapshots = [];
+
+      const t = (key) => labels[locale][key] ?? extraLabels[locale][key];
+      const number = (value) => new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", { maximumFractionDigits: 0 }).format(Number(value) || 0);
+      const timestamp = (value, style = "time") => {
+        if (!value) return "--";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "--";
+        const options = style === "short"
+          ? { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
+          : { hour: "2-digit", minute: "2-digit", second: "2-digit" };
+        return date.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", options);
+      };
+      const setText = (id, value) => { document.getElementById(id).textContent = String(value ?? ""); };
+      const safeInvoke = async (channel, payload) => {
+        if (!bridge?.invoke) throw new Error("Plugin bridge unavailable");
+        return bridge.invoke(channel, payload);
+      };
+
+      function sessionFrom(result) {
+        if (!result || typeof result !== "object") return null;
+        return result.session ?? result.activeSession ?? result;
+      }
+
+      function sessionIdFrom(session) {
+        return session?.sessionId ?? session?.id ?? session?.key ?? null;
+      }
+
+      function renderSession() {
+        const title = activeSession?.title ?? activeSession?.name ?? activeSession?.projectPath ?? t("unknown");
+        setText("sessionLine", title);
+        setText("sessionId", activeSessionId ? String(activeSessionId).slice(0, 12) : "");
+      }
+
+      function renderMetrics() {
+        setText("metricTokens", snapshot ? number(snapshot.estimatedTokens) : "--");
+        setText("metricMessages", snapshot ? number(snapshot.messageCount) : "--");
+        setText("metricSections", snapshot ? number(snapshot.sectionCount) : "--");
+        setText("metricCaptured", snapshot ? timestamp(snapshot.capturedAt) : "--");
+      }
+
+      function renderComposition() {
+        const empty = document.getElementById("compositionEmpty");
+        const content = document.getElementById("compositionContent");
+        const donut = document.getElementById("compositionDonut");
+        const legend = document.getElementById("compositionLegend");
+        legend.replaceChildren();
+        empty.hidden = Boolean(snapshot);
+        content.hidden = !snapshot;
+        setText("compositionEmptyDetail", t("noSnapshotDetail"));
+        setText("compositionTotal", snapshot ? `${number(snapshot.estimatedTokens)} ${t("tokens")}` : "--");
+        setText("donutTotal", snapshot ? number(snapshot.estimatedTokens) : "--");
+        setText("donutCaption", t("tokens"));
+        if (!snapshot) return;
+
+        const categories = snapshot.categories ?? [];
+        const total = categories.reduce((sum, item) => sum + (Number(item.estimatedTokens) || 0), 0) || 1;
+        let angle = 0;
+        const stops = [];
+        for (const category of categoryOrder) {
+          const item = categories.find((entry) => entry.category === category);
+          if (!item || !item.estimatedTokens) continue;
+          const start = angle;
+          angle += item.estimatedTokens / total * 360;
+          stops.push(`var(--${category}) ${start}deg ${angle}deg`);
+
+          const row = document.createElement("div");
+          row.className = "legend-item";
+          const swatch = document.createElement("span");
+          swatch.className = `legend-swatch cat-${category}`;
+          const name = document.createElement("span");
+          name.className = "legend-name";
+          name.textContent = t("category")[category];
+          const value = document.createElement("span");
+          value.className = "legend-value";
+          value.textContent = `${number(item.estimatedTokens)} · ${Math.round(item.estimatedTokens / total * 100)}%`;
+          row.append(swatch, name, value);
+          legend.append(row);
+        }
+        donut.style.background = stops.length ? `conic-gradient(${stops.join(",")})` : "conic-gradient(var(--line) 0deg 360deg)";
+      }
+
+      function svgElement(name, attrs = {}) {
+        const element = document.createElementNS(svgNS, name);
+        for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
+        return element;
+      }
+
+      function renderTrend() {
+        const chart = document.getElementById("trendChart");
+        const empty = document.getElementById("trendEmpty");
+        chart.replaceChildren();
+        const points = snapshots.slice(-20);
+        empty.hidden = points.length > 0;
+        chart.hidden = points.length === 0;
+        setText("trendMeta", points.length ? `${points.length} ${t("count")}` : "--");
+        setText("trendEmptyDetail", t("noTrendDetail"));
+        if (!points.length) return;
+
+        const width = 640;
+        const height = 142;
+        const left = 12;
+        const right = width - 12;
+        const top = 12;
+        const bottom = height - 18;
+        const max = Math.max(...points.map((item) => Number(item.estimatedTokens) || 0), 1);
+        const coords = points.map((point, index) => ({
+          x: points.length === 1 ? (left + right) / 2 : left + index / (points.length - 1) * (right - left),
+          y: bottom - (Number(point.estimatedTokens) || 0) / max * (bottom - top),
+          point,
+        }));
+        const svg = svgElement("svg", { class: "trend-svg", viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", role: "img", "aria-label": t("trend") });
+        for (let step = 0; step < 4; step += 1) {
+          const y = top + step / 3 * (bottom - top);
+          svg.append(svgElement("line", { class: "trend-grid", x1: left, y1: y, x2: right, y2: y }));
+        }
+        const linePath = coords.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+        const areaPath = `${linePath} L${coords[coords.length - 1].x.toFixed(1)},${bottom} L${coords[0].x.toFixed(1)},${bottom} Z`;
+        svg.append(svgElement("path", { class: "trend-area", d: areaPath }));
+        svg.append(svgElement("path", { class: "trend-line", d: linePath }));
+        for (const point of coords) {
+          const circle = svgElement("circle", { class: "trend-point", cx: point.x, cy: point.y, r: 3.5 });
+          circle.append(svgElement("title"));
+          circle.firstChild.textContent = `${timestamp(point.point.capturedAt, "short")} · ${number(point.point.estimatedTokens)} ${t("tokens")}`;
+          svg.append(circle);
+        }
+        chart.append(svg);
+
+        const tickLabels = document.createElement("div");
+        tickLabels.className = "trend-labels";
+        const indices = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
+        for (const index of indices) {
+          const label = document.createElement("span");
+          label.textContent = timestamp(points[index].capturedAt, "short");
+          tickLabels.append(label);
+        }
+        chart.append(tickLabels);
+      }
+
+      function renderBreakdown() {
+        const list = document.getElementById("sectionList");
+        const empty = document.getElementById("breakdownEmpty");
+        const query = document.getElementById("filter").value.trim().toLowerCase();
+        const categoryFilter = document.getElementById("categoryFilter").value;
+        const sortBy = document.getElementById("sortBy").value;
+        list.replaceChildren();
+        const all = snapshot?.sections ?? [];
+        const filtered = all.filter((section) => {
+          if (categoryFilter !== "all" && section.category !== categoryFilter) return false;
+          if (!query) return true;
+          const content = `${section.key} ${section.category} ${(section.items ?? []).map((item) => `${item.label} ${item.preview}`).join(" ")}`;
+          return content.toLowerCase().includes(query);
+        });
+        filtered.sort((a, b) => sortBy === "name"
+          ? a.key.localeCompare(b.key, locale === "zh" ? "zh-CN" : "en")
+          : (Number(b.estimatedTokens) || 0) - (Number(a.estimatedTokens) || 0));
+
+        empty.hidden = Boolean(snapshot) && filtered.length > 0;
+        setText("breakdownEmptyDetail", snapshot ? t("noMatches") : t("noBrowserDetail"));
+        setText("breakdownMeta", snapshot ? `${filtered.length} ${t("count")}` : "--");
+        if (!snapshot) setText("breakdownEmptyTitle", t("noBrowserTitle"));
+        else setText("breakdownEmptyTitle", t("noMatches"));
+
+        for (const section of filtered.slice(0, 48)) {
+          const details = document.createElement("details");
+          details.className = "section-row";
+          const summary = document.createElement("summary");
+          summary.className = "section-summary";
+          const swatch = document.createElement("span");
+          swatch.className = `legend-swatch cat-${section.category}`;
+          const name = document.createElement("span");
+          name.className = "section-name";
+          name.textContent = section.key;
+          const count = document.createElement("span");
+          count.className = "section-count";
+          count.textContent = `${number(section.itemCount)} ${t("count")}`;
+          const tokens = document.createElement("span");
+          tokens.className = "section-tokens";
+          tokens.textContent = `~${number(section.estimatedTokens)}`;
+          summary.append(swatch, name, count, tokens);
+          details.append(summary);
+
+          const items = document.createElement("div");
+          items.className = "item-list";
+          for (const item of (section.items ?? []).slice(0, 24)) {
+            const row = document.createElement("div");
+            row.className = "item-row";
+            const heading = document.createElement("div");
+            heading.className = "item-heading";
+            const label = document.createElement("span");
+            label.className = "item-label";
+            label.textContent = item.label;
+            const amount = document.createElement("span");
+            amount.className = "item-tokens";
+            amount.textContent = `~${number(item.estimatedTokens)}`;
+            const preview = document.createElement("div");
+            preview.className = "item-preview";
+            preview.textContent = item.preview;
+            heading.append(label, amount);
+            row.append(heading, preview);
+            items.append(row);
+          }
+          details.append(items);
+          list.append(details);
+        }
+      }
+
+      function renderInventory() {
+        const list = document.getElementById("inventoryList");
+        const empty = document.getElementById("inventoryEmpty");
+        list.replaceChildren();
+        const sections = [...(snapshot?.sections ?? [])]
+          .sort((a, b) => (Number(b.estimatedTokens) || 0) - (Number(a.estimatedTokens) || 0))
+          .slice(0, 6);
+        empty.hidden = sections.length > 0;
+        list.hidden = sections.length === 0;
+        setText("inventoryMeta", snapshot ? `${sections.length} ${t("count")}` : "--");
+        setText("inventoryEmptyTitle", t("inventoryEmptyTitle"));
+        setText("inventoryEmptyDetail", t("inventoryEmptyDetail"));
+        const max = Math.max(...sections.map((section) => Number(section.estimatedTokens) || 0), 1);
+
+        for (const section of sections) {
+          const row = document.createElement("div");
+          row.className = "inventory-row";
+          const top = document.createElement("div");
+          top.className = "inventory-topline";
+          const name = document.createElement("button");
+          name.type = "button";
+          name.className = "inventory-name-button";
+          name.textContent = section.key;
+          name.title = `${t("category")[section.category] ?? t("inventory")}: ${section.key}`;
+          name.addEventListener("click", () => {
+            setView("browser");
+            document.getElementById("filter").value = section.key;
+            document.getElementById("categoryFilter").value = section.category;
+            renderBreakdown();
+          });
+          const amount = document.createElement("span");
+          amount.className = "inventory-amount";
+          amount.textContent = `~${number(section.estimatedTokens)} · ${number(section.itemCount)} ${t("count")}`;
+          top.append(name, amount);
+          const track = document.createElement("div");
+          track.className = "inventory-track";
+          const fill = document.createElement("div");
+          fill.className = `inventory-fill cat-${section.category}`;
+          fill.style.width = `${Math.max(1, (Number(section.estimatedTokens) || 0) / max * 100)}%`;
+          track.append(fill);
+          row.append(top, track);
+          list.append(row);
+        }
+      }
+
+      function renderStatus(error = false) {
+        const status = document.getElementById("status");
+        const text = document.getElementById("statusText");
+        text.textContent = error ? t("error") : activeSession ? t("ready") : t("unavailable");
+        status.classList.toggle("status-error", error || !activeSession);
+      }
+
+      function setView(view) {
+        const overview = view === "overview";
+        document.getElementById("overviewView").hidden = !overview;
+        document.getElementById("browserView").hidden = overview;
+        document.getElementById("tabOverview").setAttribute("aria-selected", String(overview));
+        document.getElementById("tabBrowser").setAttribute("aria-selected", String(!overview));
+      }
+
+      function renderAll() {
+        document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+        for (const [id, key] of Object.entries({
+          title: "title", tabOverview: "overview", tabBrowser: "browser", refresh: "refresh", statusText: "connecting",
+          labelTokens: "tokens", labelMessages: "messages", labelSections: "sections", labelCaptured: "captured",
+          noteTokens: "estimate", noteMessages: "messageCount", noteSections: "fieldCount", noteCaptured: "currentSession",
+          headingComposition: "composition", headingTrend: "trend", headingBreakdown: "browser", donutCaption: "tokens", footnote: "footer",
+          optionAll: "all", sortTokens: "sortTokens", sortName: "sortName"
+        })) setText(id, t(key));
+        setText("captureContext", t("captureButton"));
+
+        document.getElementById("filter").placeholder = t("filter");
+        document.getElementById("compositionEmpty").querySelector(".empty-title").textContent = t("noSnapshotTitle");
+        document.getElementById("compositionEmptyDetail").textContent = t("noSnapshotDetail");
+        document.getElementById("trendEmpty").querySelector(".empty-title").textContent = t("noTrendTitle");
+        document.getElementById("trendEmptyDetail").textContent = t("noTrendDetail");
+        document.getElementById("breakdownEmptyTitle").textContent = t("noBrowserTitle");
+        document.getElementById("breakdownEmptyDetail").textContent = t("noBrowserDetail");
+        for (const category of categoryOrder) setText(`option${category[0].toUpperCase()}${category.slice(1)}`, t("category")[category]);
+        renderSession();
+        renderMetrics();
+        renderComposition();
+        renderTrend();
+        renderBreakdown();
+        setText("headingInventory", t("inventory"));
+        renderInventory();
+        renderStatus();
+      }
+
+      async function refresh() {
+        try {
+          const active = await safeInvoke("session.getActive");
+          activeSession = sessionFrom(active);
+          activeSessionId = sessionIdFrom(activeSession);
+          renderSession();
+          const result = await safeInvoke("context.getSnapshot", activeSessionId ? { sessionId: String(activeSessionId) } : {});
+          snapshot = activeSessionId ? (result?.snapshot ?? null) : null;
+          snapshots = activeSessionId && Array.isArray(result?.history) ? result.history : snapshot ? [snapshot] : [];
+          renderMetrics();
+          renderComposition();
+          renderTrend();
+          renderBreakdown();
+          renderInventory();
+          renderStatus();
+        } catch (error) {
+          activeSession = null;
+          activeSessionId = null;
+          snapshot = null;
+          snapshots = [];
+          renderAll();
+          renderStatus(true);
+          console.error("PI Context refresh failed", error);
+        }
+      }
+
+      function applyAppearance(appearance) {
+        const base = appearance?.base;
+        document.documentElement.dataset.base = base === "light" || base === "dark"
+          ? base
+          : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        locale = typeof appearance?.locale === "string" && appearance.locale.toLowerCase().startsWith("en") ? "en" : "zh";
+        renderAll();
+      }
+
+      document.getElementById("tabOverview").addEventListener("click", () => setView("overview"));
+      document.getElementById("tabBrowser").addEventListener("click", () => setView("browser"));
+      document.getElementById("refresh").addEventListener("click", refresh);
+      document.getElementById("captureContext").addEventListener("click", async () => {
+        try {
+          const result = await safeInvoke("context.requestInspection", { sessionId: activeSessionId });
+          const message = result?.shown === false
+            ? t(result.reason === "suggestion-unavailable" ? "suggestionUnavailable" : "suggestionFailed")
+            : t("suggestionShown");
+          await safeInvoke("ui.showToast", { message });
+        } catch {
+          console.warn("PI Context could not request an inspection suggestion");
+        }
+      });
+      document.getElementById("filter").addEventListener("input", renderBreakdown);
+      document.getElementById("categoryFilter").addEventListener("change", renderBreakdown);
+      document.getElementById("sortBy").addEventListener("change", renderBreakdown);
+      bridge?.on?.("appearance:changed", applyAppearance);
+      safeInvoke("app.getAppearance").then(applyAppearance).catch(() => applyAppearance(null));
+      renderAll();
+      refresh();
+    </script>
+  </body>
+</html>

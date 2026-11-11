@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "local.context-insights",
+  "name": "PI Context",
+  "version": "0.1.0",
+  "description": "Inspect and browse the active PI-Desktop session context.",
+  "main": "main.js",
+  "ui": {
+    "panel": "renderer/index.html",
+    "title": "PI Context"
+  },
+  "contributes": {
+    "views": [
+      {
+        "id": "context",
+        "title": {
+          "en": "PI Context",
+          "zh-CN": "上下文"
+        },
+        "icon": "folder",
+        "entry": "renderer/index.html",
+        "order": 20
+      }
+    ],
+    "commands": [
+      {
+        "id": "context-insights.open",
+        "title": "PI Context: Open Panel",
+        "keywords": ["context", "prompt", "tokens"]
+      }
+    ],
+    "agentTools": [
+      {
+        "name": "context_snapshot",
+        "description": "Inspect the active session's assembled LLM context. Returns approximate size, top-level composition and message counts without returning prompt contents.",
+        "risk": "low",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["inspect"],
+              "default": "inspect"
+            }
+          },
+          "required": ["action"]
+        }
+      }
+    ],
+    "skills": ["skills/context-snapshot.md"]
+  },
+  "permissions": [
+    "ui.panel",
+    "ui.view",
+    "composer.suggest",
+    "session.read",
+    "agent.tool.register",
+    "agent.prompt.inject"
+  ],
+  "engines": {
+    "piDesktop": ">=0.1.0"
+  },
+  "activationEvents": [
+    "onCommand:context-insights.open",
+    "onStartup"
+  ]
+}
